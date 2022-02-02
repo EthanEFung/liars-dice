@@ -1,5 +1,10 @@
 package main
 
+import (
+	"encoding/json"
+	"log"
+)
+
 type MessageType string
 
 const (
@@ -19,4 +24,14 @@ const (
 type Message struct {
 	Type    MessageType `json:"type"`
 	Payload interface{} `json:"payload"`
+}
+
+func (m *Message) DecodePayload(dst interface{}) {
+	bytes, err := json.Marshal(m.Payload)
+	if err != nil {
+		log.Println("Could not decode payload, marshal err: ", err)
+	}
+	if err := json.Unmarshal(bytes, dst); err != nil {
+		log.Println("Could not decode payload, unmarshal err: ", err)
+	}
 }

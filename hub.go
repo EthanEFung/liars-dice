@@ -6,13 +6,15 @@ import (
 	"log"
 	"time"
 
+	"github.com/go-redis/redis/v8"
 	"github.com/gorilla/websocket"
 )
 
 type Hub struct {
-	Lobby   map[*websocket.Conn]bool `json:"-"`
 	Rooms   map[string]*Room         `json:"rooms"`
-	Channel chan Message             `json:"-"`
+	lobby   map[*websocket.Conn]bool `json:"-"`
+	channel chan Message             `json:"-"`
+	rdb     *redis.Client            `json:"-"`
 }
 
 /*
@@ -26,19 +28,19 @@ func (h *Hub) Publish(conn *websocket.Conn) {
 		defer cancel()
 		if err := conn.ReadJSON(&msg); err != nil {
 			log.Println("Publish error: ", err)
-			delete(h.Lobby, conn)
+			delete(h.lobby, conn)
 			break
 		}
 		switch msg.Type {
 		case ConnectType:
-			h.Channel <- h.GetRooms(ctx)
+			h.channel <- h.GetRooms(ctx)
 		case CreateType:
-			h.Channel <- h.NewRoom(ctx, msg.Payload)
-			h.Channel <- h.GetRooms(ctx)
+			h.channel <- h.NewRoom(ctx, msg)
+			h.channel <- h.GetRooms(ctx)
 		case JoinType:
-			h.Channel <- h.JoinRoom(ctx, msg.Payload)
+			h.channel <- h.JoinRoom(ctx, msg.Payload)
 		case LeaveType:
-			h.Channel <- h.LeaveRoom(ctx, msg.Payload)
+			h.channel <- h.LeaveRoom(ctx, msg.Payload)
 		}
 	}
 }
@@ -49,14 +51,16 @@ func (h *Hub) Publish(conn *websocket.Conn) {
 */
 func (h *Hub) Broadcast() {
 	for {
-		msg := <-h.Channel
-		for conn, ok := range h.Lobby {
+		msg := <-h.channel
+		log.Println("Broadcasting: ", msg)
+		for conn, ok := range h.lobby {
+
 			// here we can have some sort of middleware that prevents
 			// certain events from firing to specific clients
 			if err := conn.WriteJSON(&msg); !ok || (err != nil && !websocket.IsCloseError(err, websocket.CloseGoingAway) && err != io.EOF) {
 				log.Println("Unmarshal error: ", err)
 				conn.Close()
-				delete(h.Lobby, conn)
+				delete(h.lobby, conn)
 				continue
 			}
 		}
@@ -64,15 +68,31 @@ func (h *Hub) Broadcast() {
 }
 
 func (h *Hub) GetRooms(ctx context.Context) Message {
-	var rooms []Room
+  var names []string
+	for roomname := range h.Rooms {
+		names = append(names, roomname)
+	}
 	return Message{
 		Type:    RoomsType,
-		Payload: rooms,
+		Payload: names,
 	}
 }
 
-func (h *Hub) NewRoom(ctx context.Context, payload interface{}) Message {
+func (h *Hub) NewRoom(ctx context.Context, message Message) Message {
 	var room Room
+	message.DecodePayload(&room)
+	if _, ok := h.Rooms[room.Name]; ok {
+		return Message{
+			Type: "error",
+			Payload: "Room name taken",
+		}
+	}
+	room.Hub = h
+	room.Clients = make(map[*websocket.Conn]bool)
+	room.Channel = make(chan Message)
+	h.rdb.HSet(ctx, "room:"+room.Name, "name", room.Name, "hostname", room.Hostname)
+	h.rdb.RPush(ctx, "clients:"+room.Name, room.Hostname)
+	h.Rooms[room.Name] = &room
 	return Message{
 		Type:    CreatedType,
 		Payload: room,
@@ -81,6 +101,7 @@ func (h *Hub) NewRoom(ctx context.Context, payload interface{}) Message {
 
 func (h *Hub) JoinRoom(ctx context.Context, payload interface{}) Message {
 	var room Room
+	log.Fatal("Join Room is not a service developed")
 	return Message{
 		Type:    JoinedType,
 		Payload: room,
@@ -89,6 +110,7 @@ func (h *Hub) JoinRoom(ctx context.Context, payload interface{}) Message {
 
 func (h *Hub) LeaveRoom(ctx context.Context, payload interface{}) Message {
 	var room Room
+	log.Fatal("Leave Room is not a service developed")
 	return Message{
 		Type:    LeftType,
 		Payload: room,

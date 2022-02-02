@@ -22,6 +22,6 @@ func (c *Controller) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		log.Fatal("Could not upgrade connection: ", err)
 	}
-	c.Hub.Lobby[conn] = true
+	c.Hub.lobby[conn] = true
 	c.Hub.Publish(conn)
 }

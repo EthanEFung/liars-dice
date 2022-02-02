@@ -1,10 +1,12 @@
 package main
 
 import (
+	"context"
 	"log"
 	"net/http"
 	"os"
 
+	"github.com/go-redis/redis/v8"
 	"github.com/gorilla/websocket"
 	"github.com/joho/godotenv"
 )
@@ -16,14 +18,23 @@ func main() {
 	}
 
 	hub := Hub{
-		Lobby:   make(map[*websocket.Conn]bool),
 		Rooms:   make(map[string]*Room),
-		Channel: make(chan Message),
+		lobby:   make(map[*websocket.Conn]bool),
+		channel: make(chan Message),
+		rdb: redis.NewClient(&redis.Options{
+			Addr:     os.Getenv("REDIS_ADDR"),
+			Password: "",
+			DB:       0,
+		}),
 	}
+
+	/* redis flush here for development purposes */
+	hub.rdb.FlushAll(context.Background())
 
 	http.Handle("/", &Controller{
 		Hub: hub,
 	})
+
 	go hub.Broadcast()
 
 	host, port := os.Getenv("HOST"), os.Getenv("PORT")

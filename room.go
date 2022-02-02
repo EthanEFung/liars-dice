@@ -10,7 +10,7 @@ type Room struct {
 	Name     string                   `json:"name"`
 	Hostname string                   `json:"hostname"`
 	Clients  map[*websocket.Conn]bool `json:"-"`
-	Hub      Hub                      `json:"-"`
+	Hub      *Hub                      `json:"-"`
 	Channel  chan Message             `json:"-"`
 }
 
