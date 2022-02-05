@@ -55,3 +55,7 @@ Every Round needs the following mechanics:
 2. needing a channel that manages all current websocket connections
 3. some sort of dispatcher that sends messages to all current connections
 4. redis storage to store session data
+
+# TODOs
+- [ ] create a more robust "hosting" system so that users may be able to
+  pass the host responsibilities to another user within a room

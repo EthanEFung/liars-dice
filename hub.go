@@ -38,7 +38,7 @@ func (h *Hub) Publish(conn *websocket.Conn) {
 			h.channel <- h.NewRoom(ctx, msg)
 			h.channel <- h.GetRooms(ctx)
 		case JoinType:
-			h.channel <- h.JoinRoom(ctx, msg.Payload)
+			h.channel <- h.JoinRoom(ctx, msg)
 		case LeaveType:
 			h.channel <- h.LeaveRoom(ctx, msg.Payload)
 		}
@@ -68,7 +68,7 @@ func (h *Hub) Broadcast() {
 }
 
 func (h *Hub) GetRooms(ctx context.Context) Message {
-  var names []string
+	var names []string
 	for roomname := range h.Rooms {
 		names = append(names, roomname)
 	}
@@ -83,12 +83,12 @@ func (h *Hub) NewRoom(ctx context.Context, message Message) Message {
 	message.DecodePayload(&room)
 	if _, ok := h.Rooms[room.Name]; ok {
 		return Message{
-			Type: "error",
+			Type:    "error",
 			Payload: "Room name taken",
 		}
 	}
 	room.Hub = h
-	room.Clients = make(map[*websocket.Conn]bool)
+	room.Clients = make(map[*Client]bool)
 	room.Channel = make(chan Message)
 	h.rdb.HSet(ctx, "room:"+room.Name, "name", room.Name, "hostname", room.Hostname)
 	h.rdb.RPush(ctx, "clients:"+room.Name, room.Hostname)
@@ -99,9 +99,29 @@ func (h *Hub) NewRoom(ctx context.Context, message Message) Message {
 	}
 }
 
-func (h *Hub) JoinRoom(ctx context.Context, payload interface{}) Message {
+func (h *Hub) JoinRoom(ctx context.Context, msg Message) Message {
+	/* if the user is the first to join the room, implicitly we will assume
+	this is the host, because otherwise, this is some sort of bot that is
+	listening for new rooms and hacking
+
+	lets start by defining the payload what is the relevant information that
+	we should be receiving in order to join?
+
+	we should at least know the name of the room
+	otherwise we should know everything that we need to know from the hub
+	we also need to know the name of the client who is attempting to join
+
+	while checking for the room, we'll also check the map of clients within
+	the room, to assign the user as the host (if need be)
+
+	*/
 	var room Room
-	log.Fatal("Join Room is not a service developed")
+	var roomname string
+	msg.DecodePayload(&roomname)
+	if h.Rooms[roomname] == nil {
+		log.Fatal("attempt to join a nil room")
+	}
+
 	return Message{
 		Type:    JoinedType,
 		Payload: room,
