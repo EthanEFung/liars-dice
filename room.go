@@ -20,9 +20,7 @@ type Room struct {
 	Channel  chan Message     `json:"-"`
 }
 
-func (r Room) Join(ctx context.Context) {
-
-}
+func (r Room) Join(ctx context.Context) {}
 
 func (r Room) Publish(ctx context.Context, conn *websocket.Conn) {}
 

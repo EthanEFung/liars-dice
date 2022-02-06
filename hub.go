@@ -40,7 +40,7 @@ func (h *Hub) Publish(conn *websocket.Conn) {
 		case JoinType:
 			h.channel <- h.JoinRoom(ctx, msg)
 		case LeaveType:
-			h.channel <- h.LeaveRoom(ctx, msg.Payload)
+			h.channel <- h.LeaveRoom(ctx, msg)
 		}
 	}
 }
@@ -104,33 +104,62 @@ func (h *Hub) JoinRoom(ctx context.Context, msg Message) Message {
 	this is the host, because otherwise, this is some sort of bot that is
 	listening for new rooms and hacking
 
-	lets start by defining the payload what is the relevant information that
-	we should be receiving in order to join?
-
+	what is the relevant information that we should be receiving in order to join?
 	we should at least know the name of the room
-	otherwise we should know everything that we need to know from the hub
 	we also need to know the name of the client who is attempting to join
 
 	while checking for the room, we'll also check the map of clients within
 	the room, to assign the user as the host (if need be)
-
 	*/
+
 	var room Room
-	var roomname string
-	msg.DecodePayload(&roomname)
-	if h.Rooms[roomname] == nil {
+	var p struct {
+		Roomname string         `json:"roomname"`
+		Username string         `json:"username"`
+		Conn     websocket.Conn `json:"-"`
+	}
+	msg.DecodePayload(&p)
+	log.Println("This is the payload", p)
+	if h.Rooms[p.Roomname] == nil {
 		log.Fatal("attempt to join a nil room")
 	}
+	clients := (*h.Rooms[p.Roomname]).Clients
+	hostless := len(clients) == 0
+	if hostless {
+		h.Rooms[p.Roomname].Hostname = p.Username
+	}
+	client := &Client{
+		Name: p.Username,
+		Host: hostless,
+		Room: room,
+	}
+	h.Rooms[p.Roomname].Clients[client] = true
 
 	return Message{
 		Type:    JoinedType,
-		Payload: room,
+		Payload: h.Rooms[p.Roomname],
 	}
 }
 
-func (h *Hub) LeaveRoom(ctx context.Context, payload interface{}) Message {
-	var room Room
-	log.Fatal("Leave Room is not a service developed")
+func (h *Hub) LeaveRoom(ctx context.Context, message Message) Message {
+	var room *Room
+	/*
+		  what we would like to do is to check the room, in which we are in
+			and based upon the username, remove the client from the client map
+	*/
+	var p struct {
+		Roomname string `json:"roomname"`
+		Username string `json:"username"`
+	}
+	message.DecodePayload(&p)
+	/* get room */
+	room = h.Rooms[p.Roomname]
+	for x := range room.Clients {
+		if x.Name == p.Username {
+			delete(room.Clients, x)
+		}
+	}
+
 	return Message{
 		Type:    LeftType,
 		Payload: room,
