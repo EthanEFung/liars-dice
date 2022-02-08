@@ -15,10 +15,12 @@ const (
 	LeaveType               = "leave"
 
 	// Message types sent from server
-	RoomsType   = "rooms"
-	CreatedType = "created"
-	JoinedType  = "joined"
-	LeftType    = "left"
+	RoomsType     = "rooms"
+	CreatedType   = "created"
+	JoinedType    = "joined"
+	LeftType      = "left"
+	ErrorType     = "error"
+	ConnectedType = "connected"
 )
 
 type Message struct {

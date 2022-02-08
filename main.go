@@ -19,7 +19,7 @@ func main() {
 
 	hub := Hub{
 		Rooms:   make(map[string]*Room),
-		lobby:   make(map[*websocket.Conn]bool),
+		lobby:   make(map[*websocket.Conn]*Client),
 		channel: make(chan Message),
 		rdb: redis.NewClient(&redis.Options{
 			Addr:     os.Getenv("REDIS_ADDR"),

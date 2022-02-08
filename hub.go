@@ -11,10 +11,10 @@ import (
 )
 
 type Hub struct {
-	Rooms   map[string]*Room         `json:"rooms"`
-	lobby   map[*websocket.Conn]bool `json:"-"`
-	channel chan Message             `json:"-"`
-	rdb     *redis.Client            `json:"-"`
+	Rooms   map[string]*Room            `json:"rooms"`
+	lobby   map[*websocket.Conn]*Client `json:"-"`
+	channel chan Message                `json:"-"`
+	rdb     *redis.Client               `json:"-"`
 }
 
 /*
@@ -33,6 +33,7 @@ func (h *Hub) Publish(conn *websocket.Conn) {
 		}
 		switch msg.Type {
 		case ConnectType:
+			h.channel <- h.Connect(ctx, msg, conn)
 			h.channel <- h.GetRooms(ctx)
 		case CreateType:
 			h.channel <- h.NewRoom(ctx, msg)
@@ -53,17 +54,30 @@ func (h *Hub) Broadcast() {
 	for {
 		msg := <-h.channel
 		log.Println("Broadcasting: ", msg)
-		for conn, ok := range h.lobby {
+		for conn := range h.lobby {
 
 			// here we can have some sort of middleware that prevents
 			// certain events from firing to specific clients
-			if err := conn.WriteJSON(&msg); !ok || (err != nil && !websocket.IsCloseError(err, websocket.CloseGoingAway) && err != io.EOF) {
+			if err := conn.WriteJSON(&msg); err != nil && !websocket.IsCloseError(err, websocket.CloseGoingAway) && err != io.EOF {
 				log.Println("Unmarshal error: ", err)
 				conn.Close()
 				delete(h.lobby, conn)
 				continue
 			}
 		}
+	}
+}
+
+func (h *Hub) Connect(ctx context.Context, msg Message, conn *websocket.Conn) Message {
+	var p struct {
+		Username string `json:"username"`
+	}
+	msg.DecodePayload(&p)
+	h.lobby[conn] = &Client{
+		Name: p.Username,
+	}
+	return Message{
+		Type: ConnectedType,
 	}
 }
 
@@ -87,9 +101,9 @@ func (h *Hub) NewRoom(ctx context.Context, message Message) Message {
 			Payload: "Room name taken",
 		}
 	}
-	room.Hub = h
-	room.Clients = make(map[*Client]bool)
-	room.Channel = make(chan Message)
+	room.hub = h
+	room.clients = make(map[*websocket.Conn]*Client)
+	room.channel = make(chan Message)
 	h.rdb.HSet(ctx, "room:"+room.Name, "name", room.Name, "hostname", room.Hostname)
 	h.rdb.RPush(ctx, "clients:"+room.Name, room.Hostname)
 	h.Rooms[room.Name] = &room
@@ -111,57 +125,33 @@ func (h *Hub) JoinRoom(ctx context.Context, msg Message) Message {
 	while checking for the room, we'll also check the map of clients within
 	the room, to assign the user as the host (if need be)
 	*/
-
-	var room Room
 	var p struct {
-		Roomname string         `json:"roomname"`
-		Username string         `json:"username"`
-		Conn     websocket.Conn `json:"-"`
+		Roomname string `json:"roomname"`
 	}
 	msg.DecodePayload(&p)
-	log.Println("This is the payload", p)
-	if h.Rooms[p.Roomname] == nil {
+	room, ok := h.Rooms[p.Roomname]
+	if ok == false {
 		log.Fatal("attempt to join a nil room")
 	}
-	clients := (*h.Rooms[p.Roomname]).Clients
-	hostless := len(clients) == 0
-	if hostless {
-		h.Rooms[p.Roomname].Hostname = p.Username
-	}
-	client := &Client{
-		Name: p.Username,
-		Host: hostless,
-		Room: room,
-	}
-	h.Rooms[p.Roomname].Clients[client] = true
-
-	return Message{
-		Type:    JoinedType,
-		Payload: h.Rooms[p.Roomname],
-	}
+	return room.Join(ctx, msg)
 }
 
 func (h *Hub) LeaveRoom(ctx context.Context, message Message) Message {
-	var room *Room
 	/*
-		  what we would like to do is to check the room, in which we are in
-			and based upon the username, remove the client from the client map
+		what we would like to do is to check the room, in which we are in
+		and based upon the username, remove the client from the client map
 	*/
 	var p struct {
 		Roomname string `json:"roomname"`
-		Username string `json:"username"`
 	}
 	message.DecodePayload(&p)
-	/* get room */
-	room = h.Rooms[p.Roomname]
-	for x := range room.Clients {
-		if x.Name == p.Username {
-			delete(room.Clients, x)
+	room, ok := h.Rooms[p.Roomname]
+	if !ok {
+		log.Println("Attempt to leave a nil room")
+		return Message{
+			Type:    LeftType,
+			Payload: room,
 		}
 	}
-
-	return Message{
-		Type:    LeftType,
-		Payload: room,
-	}
+	return room.Leave(ctx, message)
 }
