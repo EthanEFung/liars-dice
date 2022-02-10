@@ -39,9 +39,11 @@ func (h *Hub) Publish(conn *websocket.Conn) {
 			h.channel <- h.NewRoom(ctx, msg)
 			h.channel <- h.GetRooms(ctx)
 		case JoinType:
-			h.channel <- h.JoinRoom(ctx, msg)
+			h.channel <- h.JoinRoom(ctx, msg, conn)
 		case LeaveType:
 			h.channel <- h.LeaveRoom(ctx, msg)
+			h.channel <- h.DeleteRoom(ctx, msg)
+			h.channel <- h.GetRooms(ctx)
 		}
 	}
 }
@@ -113,7 +115,7 @@ func (h *Hub) NewRoom(ctx context.Context, message Message) Message {
 	}
 }
 
-func (h *Hub) JoinRoom(ctx context.Context, msg Message) Message {
+func (h *Hub) JoinRoom(ctx context.Context, msg Message, conn *websocket.Conn) Message {
 	/* if the user is the first to join the room, implicitly we will assume
 	this is the host, because otherwise, this is some sort of bot that is
 	listening for new rooms and hacking
@@ -133,7 +135,7 @@ func (h *Hub) JoinRoom(ctx context.Context, msg Message) Message {
 	if ok == false {
 		log.Fatal("attempt to join a nil room")
 	}
-	return room.Join(ctx, msg)
+	return room.Join(ctx, msg, conn)
 }
 
 func (h *Hub) LeaveRoom(ctx context.Context, message Message) Message {
@@ -142,6 +144,7 @@ func (h *Hub) LeaveRoom(ctx context.Context, message Message) Message {
 		and based upon the username, remove the client from the client map
 	*/
 	var p struct {
+		Username string `json:"username"`
 		Roomname string `json:"roomname"`
 	}
 	message.DecodePayload(&p)
@@ -154,4 +157,28 @@ func (h *Hub) LeaveRoom(ctx context.Context, message Message) Message {
 		}
 	}
 	return room.Leave(ctx, message)
+}
+
+/*
+	DeleteRoom removes the room in question if it exists and the user
+	that is passed is the host of the room
+*/
+func (h *Hub) DeleteRoom(ctx context.Context, message Message) Message {
+	var p struct {
+		Username string `json:"username"`
+		Roomname string `json:"roomname"`
+	}
+	message.DecodePayload(&p)
+	room, ok := h.Rooms[p.Roomname]
+	if !ok || room.Hostname != p.Username {
+		return Message{
+			Type: DeletedType,
+			Payload: nil,
+		}
+	}
+	delete(h.Rooms, p.Roomname)
+	return Message{
+		Type: DeletedType,
+		Payload: p.Roomname,
+	}
 }

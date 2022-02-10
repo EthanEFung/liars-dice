@@ -20,7 +20,7 @@ type Room struct {
 	channel  chan Message                `json:"-"`
 }
 
-func (r *Room) Join(ctx context.Context, msg Message) Message {
+func (r *Room) Join(ctx context.Context, msg Message, conn *websocket.Conn) Message {
 	var p struct {
 		Username string `json:"username"`
 	}
@@ -32,11 +32,7 @@ func (r *Room) Join(ctx context.Context, msg Message) Message {
 		r.Hostname = p.Username
 	}
 	for wc, client := range r.hub.lobby {
-		if client.Name == p.Username {
-			/*
-				found the users connection. TODO: what do we do with this?
-				we're trying to add to the room clients map the user
-			*/
+		if wc == conn {
 			client.Host = hostless
 			client.Room = r
 			r.clients[wc] = client

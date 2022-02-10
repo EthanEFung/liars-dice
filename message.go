@@ -21,6 +21,7 @@ const (
 	LeftType      = "left"
 	ErrorType     = "error"
 	ConnectedType = "connected"
+	DeletedType = "deleted"
 )
 
 type Message struct {
